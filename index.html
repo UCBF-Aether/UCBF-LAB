@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UCBF Aether Lab</title>
+  <style>
+    body {
+      font-family: 'Courier New', monospace;
+      background: radial-gradient(ellipse at center, #0a0a2e 0%, #000011 50%, #000000 100%);
+      color: #e0e0e0; margin: 0; padding: 0;
+      overflow-x: hidden; min-height: 100vh;
+    }
+    .container { display: grid; gap: 15px; padding: 15px; }
+    h2 { color: #00ffaa; font-size: 1.2rem; }
+    .field-canvas {
+      width: 100%; height: 320px; max-width: 100vw;
+      border: 2px solid #00ffaa; border-radius: 10px;
+      background: radial-gradient(circle at center, rgba(0,255,170,0.05), rgba(0,0,0,0.8));
+      position: relative; overflow: hidden; touch-action: none;
+    }
+    .particle { position: absolute; border-radius: 50%; pointer-events: none; transition: box-shadow .12s; }
+    .buoyon { background: radial-gradient(circle,#00ffaa,transparent 75%); }
+    .fermion { background: radial-gradient(circle,#ff0088,transparent 75%); }
+    .torsion { background: radial-gradient(circle,#0088ff,transparent 75%); }
+    .controls button, .ptype-btn {
+      background: linear-gradient(45deg, #00ffaa, #0088ff);
+      border: none; padding: 8px 12px; margin: 3px 2px;
+      border-radius: 6px; font-weight: bold; cursor: pointer; color: #000;
+      font-size: 1rem; min-width: 60px;
+    }
+    .controls button.active, .ptype-btn.active { outline: 2px solid #ffaa00; }
+    .controls button:hover, .ptype-btn:hover { transform: scale(1.07); }
+    .ptype-select { display: flex; gap: 4px; margin-bottom: 6px; }
+    .sliders { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .slider-group {
+      background: rgba(0,0,0,0.4); padding: 6px;
+      border-radius: 6px; font-size: 0.95rem;
+    }
+    input[type=range] { width: 100%; }
+    .toggles label { display:block; font-size:0.88rem; margin-top:3px; }
+    #systemLogs {
+      background: rgba(0,0,0,0.62); padding: 9px;
+      font-size: 0.81rem; border-radius: 8px;
+      max-height: 120px; overflow-y: auto;
+    }
+    .log-entry { margin: 3px 0; padding: 2px 6px; border-left: 2px solid #00ffaa; }
+    .log-entry.success { border-left-color: #00ffaa; }
+    .log-entry.warning { border-left-color: #ffaa00; }
+    .log-entry.critical { border-left-color: #ff0088; }
+    canvas.fieldlines { position:absolute; top:0; left:0; pointer-events:none; }
+    @media (max-width:600px) {
+      .container { padding: 4px; gap:8px; }
+      h2 { font-size: 1rem; }
+      .field-canvas { height: 190px; }
+      .sliders { grid-template-columns: 1fr; }
+      .controls button, .ptype-btn { font-size:0.92rem; min-width: 45px; padding: 6px 6px;}
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>⚛️ UCBF Aether Lab</h2>
+    <div class="field-canvas" id="fieldCanvas">
+      <canvas id="fieldlineCanvas" class="fieldlines"></canvas>
+    </div>
+    <div class="ptype-select">
+      <button class="ptype-btn active" data-ptype="fermion">Fermion</button>
+      <button class="ptype-btn" data-ptype="buoyon">Buoyon</button>
+      <button class="ptype-btn" data-ptype="torsion">Torsion</button>
+    </div>
+    <div id="live-physics"></div>
+    <div class="sliders">
+      <div class="slider-group">ρ₀: <span id="rho0-val">1.0</span>
+        <input id="rho0" type="range" min="0" max="5" step="0.1" value="1.0"></div>
+      <div class="slider-group">λ: <span id="lambda-val">2.0</span>
+        <input id="lambda" type="range" min="0" max="5" step="0.1" value="2.0"></div>
+      <div class="slider-group">τ: <span id="tau-val">1.0</span>
+        <input id="tau" type="range" min="0" max="5" step="0.1" value="1.0"></div>
+      <div class="slider-group">ω: <span id="omega-val">0.5</span>
+        <input id="omega" type="range" min="0" max="3" step="0.1" value="0.5"></div>
+    </div>
+    <div class="controls">
+      <button onclick="runExperiment('gravity')">Gravity</button>
+      <button onclick="runExperiment('mond')">MOND</button>
+      <button onclick="runExperiment('lensing')">Bullet Cluster</button>
+      <button onclick="runExperiment('anomaly')">g-2 Loop</button>
+      <button onclick="runExperiment('topology')">Topology</button>
+      <button onclick="runExperiment('reset')">Reset</button>
+    </div>
+    <div class="toggles">
+      <label><input type="checkbox" id="persistent"> Persistent Particles</label>
+      <label><input type="checkbox" id="tracers"> Tracers</label>
+      <label><input type="checkbox" id="waves"> Waves</label>
+      <label><input type="checkbox" id="fieldlines"> Field Lines</label>
+    </div>
+    <div id="systemLogs"></div>
+    <div><strong>Stats:</strong>
+      Buoyons: <span id="buoyon-count">0</span> |
+      Fermions: <span id="fermion-count">0</span> |
+      Torsions: <span id="torsion-count">0</span>
+    </div>
+  </div>
+<script>
+class UCBFLaboratory {
+  constructor() {
+    this.params = { rho0: 1.0, lambda: 2.0, tau: 1.0, omega: 0.5, GM: 5000 };
+    this.particles = [];
+    this.time = 0; this.isRunning = true;
+    this.ptype = 'fermion';
+    this.canvas = document.getElementById('fieldCanvas');
+    this.fieldlineCanvas = document.getElementById('fieldlineCanvas');
+    this.ctx = this.fieldlineCanvas.getContext('2d');
+    this.resizeCanvas();
+    this.setupEventHandlers();
+    this.startSimulation();
+    this.logMessage('UCBF Aether Lab initialized', 'success');
+  }
+  resizeCanvas() {
+    this.fieldlineCanvas.width = this.canvas.clientWidth;
+    this.fieldlineCanvas.height = this.canvas.clientHeight;
+  }
+  setupEventHandlers() {
+    // Sliders update model live
+    ['rho0', 'lambda', 'tau', 'omega'].forEach(param => {
+      const slider = document.getElementById(param);
+      const display = document.getElementById(param + '-val');
+      slider.addEventListener('input', e => {
+        this.params[param] = parseFloat(e.target.value);
+        display.textContent = this.params[param].toFixed(2);
+        this.updatePhysics();
+      });
+    });
+    // Particle type selector
+    document.querySelectorAll('.ptype-btn').forEach(btn => {
+      btn.onclick = e => {
+        document.querySelectorAll('.ptype-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this.ptype = btn.dataset.ptype;
+      };
+    });
+    // Touch/Mouse particle creation
+    let isDragging = false, lastDrag = 0, burstTimer = null;
+    const createAt = (x, y, type = this.ptype) => {
+      this.particles.push(new UCBFParticle(x, y, type, this.params));
+    };
+    const getXY = e => {
+      const rect = this.canvas.getBoundingClientRect();
+      if (e.touches && e.touches[0]) {
+        return [e.touches[0].clientX - rect.left, e.touches[0].clientY - rect.top];
+      } else {
+        return [e.offsetX || (e.clientX - rect.left), e.offsetY || (e.clientY - rect.top)];
+      }
+    };
+    // Touch: drag = trail, long-hold = burst
+    this.canvas.addEventListener('touchstart', e => {
+      isDragging = true;
+      let [x, y] = getXY(e);
+      createAt(x, y);
+      burstTimer = setTimeout(() => { this.createFieldBurst(x, y); }, 400);
+    });
+    this.canvas.addEventListener('touchmove', e => {
+      if (!isDragging) return;
+      e.preventDefault();
+      let [x, y] = getXY(e);
+      if (performance.now() - lastDrag > 45) { createAt(x, y); lastDrag = performance.now(); }
+    }, { passive: false });
+    this.canvas.addEventListener('touchend', e => {
+      isDragging = false;
+      if (burstTimer) clearTimeout(burstTimer);
+    });
+    // Mouse: click for particle, drag for trail, right-click for burst
+    this.canvas.addEventListener('mousedown', e => {
+      if (e.button === 2) return;
+      isDragging = true; let [x, y] = getXY(e);
+      createAt(x, y);
+      burstTimer = setTimeout(() => { this.createFieldBurst(x, y); }, 400);
+    });
+    this.canvas.addEventListener('mousemove', e => {
+      if (!isDragging) return;
+      if (performance.now() - lastDrag > 35) {
+        let [x, y] = getXY(e); createAt(x, y); lastDrag = performance.now();
+      }
+    });
+    document.addEventListener('mouseup', e => {
+      isDragging = false;
+      if (burstTimer) clearTimeout(burstTimer);
+    });
+    this.canvas.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      let [x, y] = getXY(e);
+      this.createFieldBurst(x, y);
+    });
+    window.addEventListener('resize', () => this.resizeCanvas());
+  }
+  createFieldBurst(x, y) {
+    for (let i = 0; i < 12; i++) {
+      const angle = (2 * Math.PI * i) / 12;
+      const px = x + Math.cos(angle) * 28, py = y + Math.sin(angle) * 28;
+      const types = ['buoyon', 'fermion', 'torsion'];
+      const type = types[i % 3];
+      const p = new UCBFParticle(px, py, type, this.params);
+      p.vx = Math.cos(angle) * 0.7; p.vy = Math.sin(angle) * 0.7;
+      this.particles.push(p);
+    }
+    this.logMessage('Field burst generated', 'critical');
+  }
+  calculateUCBFGravity(r, M) {
+    const λ = this.params.lambda, GM_over_r2 = M / (r * r + 1);
+    if (λ === 0) return 0;
+    const A = 1, B = λ - GM_over_r2, C = -(GM_over_r2 * λ + λ * λ);
+    const disc = B * B - 4 * A * C; if (disc < 0) return 0;
+    const g1 = (-B + Math.sqrt(disc)) / (2 * A), g2 = (-B - Math.sqrt(disc)) / (2 * A);
+    return g1 > 0 ? g1 : g2;
+  }
+  updatePhysics() {
+    const { lambda, rho0, omega } = this.params;
+    const tauAnomaly = omega * 1e-6, muonAnomaly = omega * 4e-9, electronAnomaly = omega * 1e-13;
+    const mondScale = lambda * 1e-10, tullyFisher = Math.pow(mondScale * rho0 * 1e9, 0.25);
+    const cosmicAccel = 0.618 * lambda * 1e-10;
+    document.getElementById('live-physics').innerHTML = `
+      <div><strong>Predictions:</strong><br>
+      Tau g-2=${tauAnomaly.toExponential(1)}<br>
+      Muon g-2=${muonAnomaly.toExponential(1)}<br>
+      Electron g-2=${electronAnomaly.toExponential(1)}</div>
+      <div>MOND a₀=${mondScale.toExponential(2)} m/s²<br>
+      Tully–Fisher v=${tullyFisher.toFixed(0)} km/s<br>
+      Cosmic accel=${cosmicAccel.toExponential(2)} m/s²</div>`;
+  }
+  runExperiment(type) {
+    this.resetField();
+    if (type === 'gravity') this.simulateGravityTest();
+    if (type === 'mond') this.simulateMONDRegime();
+    if (type === 'lensing') this.simulateBulletCluster();
+    if (type === 'anomaly') this.simulateAnomalousLoop();
+    if (type === 'topology') this.simulateTopology();
+    if (type === 'reset') this.resetField();
+  }
+  simulateGravityTest() {
+    const cx = this.canvas.offsetWidth / 2, cy = this.canvas.offsetHeight / 2;
+    for (let i = 0; i < 8; i++) {
+      const angle = (2 * Math.PI * i) / 8;
+      const x = cx + Math.cos(angle) * 80, y = cy + Math.sin(angle) * 80;
+      const p = new UCBFParticle(x, y, 'buoyon', this.params); p.testMass = true;
+      this.particles.push(p);
+    }
+    this.logMessage('Gravity regime', 'success');
+  }
+  simulateMONDRegime() {
+    const cx = this.canvas.offsetWidth / 2, cy = this.canvas.offsetHeight / 2;
+    for (let i = 0; i < 12; i++) {
+      const radius = 60 + i * 15, angle = (2 * Math.PI * i) / 12;
+      const x = cx + Math.cos(angle) * radius, y = cy + Math.sin(angle) * radius;
+      const g = this.calculateUCBFGravity(radius, this.params.GM), v = Math.sqrt(Math.abs(g * radius));
+      const p = new UCBFParticle(x, y, 'fermion', this.params);
+      p.vx = -Math.sin(angle) * v * 0.05; p.vy = Math.cos(angle) * v * 0.05; p.mondParticle = true;
+      this.particles.push(p);
+    }
+    this.logMessage('MOND regime', 'warning');
+  }
+  simulateBulletCluster() {
+    const cx1 = this.canvas.offsetWidth * 0.3, cx2 = this.canvas.offsetWidth * 0.7, cy = this.canvas.offsetHeight / 2;
+    [cx1, cx2].forEach((cx, ci) => {
+      for (let i = 0; i < 20; i++) {
+        const angle = Math.random() * 2 * Math.PI, dist = Math.random() * 40;
+        const x = cx + Math.cos(angle) * dist, y = cy + Math.sin(angle) * dist;
+        const p = new UCBFParticle(x, y, 'torsion', this.params); p.vx = (ci === 0 ? 1 : -1) * 0.5;
+        this.particles.push(p);
+      }
+    });
+    this.logMessage('Bullet Cluster', 'critical');
+  }
+  simulateAnomalousLoop() {
+    const cx = this.canvas.offsetWidth / 2, cy = this.canvas.offsetHeight / 2, R = 40;
+    for (let i = 0; i < 16; i++) {
+      const angle = (2 * Math.PI * i) / 16;
+      const x = cx + Math.cos(angle) * R, y = cy + Math.sin(angle) * R;
+      const p = new UCBFParticle(x, y, 'buoyon', this.params);
+      p.loopParticle = true; p.loopAngle = angle; this.particles.push(p);
+    }
+    const f = new UCBFParticle(cx, cy, 'fermion', this.params); f.centralFermion = true; this.particles.push(f);
+    this.logMessage('g-2 anomaly loop', 'critical');
+  }
+  simulateTopology() {
+    const cx = this.canvas.offsetWidth / 2, cy = this.canvas.offsetHeight / 2;
+    for (let n = 1; n <= 3; n++) { const R = n * 25;
+      for (let i = 0; i < n * 8
+; i++) {
+        const angle = (2 * Math.PI * i * n) / (n * 8);
+        const x = cx + Math.cos(angle) * R, y = cy + Math.sin(angle) * R;
+        const p = new UCBFParticle(x, y, 'fermion', this.params);
+        p.topologicalCharge = n; this.particles.push(p);
+      }
+    }
+    this.logMessage('Topology', 'success');
+  }
+  resetField() {
+    this.particles = [];
+    this.logMessage('Field reset', 'success');
+  }
+  drawFieldLines() {
+    if (!document.getElementById('fieldlines').checked) {
+      this.ctx.clearRect(0, 0, this.fieldlineCanvas.width, this.fieldlineCanvas.height); return;
+    }
+    this.ctx.clearRect(0, 0, this.fieldlineCanvas.width, this.fieldlineCanvas.height);
+    const cx = this.fieldlineCanvas.width / 2, cy = this.fieldlineCanvas.height / 2;
+    this.ctx.strokeStyle = "rgba(0,255,170,0.21)";
+    for (let i = 0; i < 36; i++) {
+      const angle = (2 * Math.PI * i) / 36;
+      const x = cx + Math.cos(angle) * cx, y = cy + Math.sin(angle) * cy;
+      this.ctx.beginPath(); this.ctx.moveTo(cx, cy); this.ctx.lineTo(x, y); this.ctx.stroke();
+    }
+  }
+  logMessage(msg, type = '') {
+    const logs = document.getElementById('systemLogs');
+    const entry = document.createElement('div'); entry.className = `log-entry ${type}`;
+    entry.innerHTML = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    logs.insertBefore(entry, logs.firstChild);
+    if (logs.querySelectorAll('.log-entry').length > 15) logs.lastChild.remove();
+  }
+  startSimulation() {
+    const animate = () => {
+      if (!this.isRunning) return;
+      this.time++; this.updateParticles(); this.renderParticles(); this.updateStats(); this.drawFieldLines();
+      if (this.time % 60 === 0) this.updatePhysics();
+      requestAnimationFrame(animate);
+    }; animate();
+  }
+  updateParticles() {
+    this.particles = this.particles.filter(p => !p.isDead());
+    this.particles.forEach(p => p.update(this.canvas, this.params, this));
+  }
+  renderParticles() {
+    this.canvas.querySelectorAll('.particle').forEach(p => p.remove());
+    this.particles.forEach(p => this.canvas.appendChild(p.createElement()));
+  }
+  updateStats() {
+    document.getElementById('buoyon-count').textContent = this.particles.filter(p => p.type === 'buoyon').length;
+    document.getElementById('fermion-count').textContent = this.particles.filter(p => p.type === 'fermion').length;
+    document.getElementById('torsion-count').textContent = this.particles.filter(p => p.type === 'torsion').length;
+  }
+}
+
+class UCBFParticle {
+  constructor(x, y, type, params) {
+    this.x = x; this.y = y; this.type = type; this.params = { ...params };
+    this.vx = (Math.random() - 0.5) * 1; this.vy = (Math.random() - 0.5) * 1;
+    this.age = 0; this.maxAge = 420; this.phase = Math.random() * 2 * Math.PI;
+    this.testMass = false; this.mondParticle = false; this.loopParticle = false;
+    this.topologicalCharge = 0; this.centralFermion = false;
+    this.trail = [];
+  }
+  update(canvas, params, lab) {
+    // All sliders impact live
+    const { rho0, lambda, tau, omega } = params;
+    let forceScale = 1;
+    if (document.getElementById('waves').checked) { forceScale *= Math.sin(lab.time * 0.05) * (lambda || 1); }
+    // Gravity/field motion
+    const cx = canvas.offsetWidth / 2, cy = canvas.offsetHeight / 2, dx = cx - this.x, dy = cy - this.y, r = Math.sqrt(dx * dx + dy * dy) + 1;
+    if (this.testMass || this.mondParticle || this.type === 'buoyon' || this.type === 'fermion') {
+      // All gravity scales (set to 0 if any parameter zero)
+      const g = lab.calculateUCBFGravity(r, params.GM) * rho0 * forceScale * (omega || 1) * (lambda === 0 ? 0 : 1);
+      this.vx += (dx / r) * g * 0.0009;
+      this.vy += (dy / r) * g * 0.0009;
+    }
+    if (this.type === 'torsion' || this.topologicalCharge) {
+      // Torsion scales only with tau, zero when tau==0
+      const t = tau * 0.018 * (tau === 0 ? 0 : 1);
+      this.vx += -dy / r * t * (this.topologicalCharge || 1);
+      this.vy += dx / r * t * (this.topologicalCharge || 1);
+    }
+    if (this.loopParticle) {
+      this.loopAngle += 0.08 * omega; const R = 40;
+      this.x = cx + Math.cos(this.loopAngle) * R; this.y = cy + Math.sin(this.loopAngle) * R;
+    }
+    if (this.x <= 0 || this.x >= canvas.offsetWidth) this.vx *= -0.8;
+    if (this.y <= 0 || this.y >= canvas.offsetHeight) this.vy *= -0.8;
+    this.x += this.vx; this.y += this.vy; this.age++; this.phase += 0.04;
+
+    // Keep a trail for tracers
+    if (document.getElementById('tracers').checked) {
+      if (this.trail.length > 22) this.trail.shift();
+      this.trail.push({ x: this.x, y: this.y, age: this.age });
+    } else {
+      this.trail = [];
+    }
+  }
+  createElement() {
+    const el = document.createElement('div');
+    el.className = `particle ${this.type}`;
+    el.style.width = '7px'; el.style.height = '7px';
+    el.style.left = (this.x - 3.5) + 'px'; el.style.top = (this.y - 3.5) + 'px';
+    el.style.opacity = Math.max(0.22, 1 - this.age / this.maxAge);
+    // Tracers: show trailing shadow
+    if (document.getElementById('tracers').checked && this.trail.length > 2) {
+      let shadow = '';
+      for (let i = 0; i < this.trail.length; i += 4) {
+        const t = this.trail[i];
+        shadow += `${t.x - this.x}px ${t.y - this.y}px 5px 1.5px ${
+          this.type === 'buoyon' ? '#00ffaa88' :
+          this.type === 'fermion' ? '#ff008888' : '#0088ff99'
+        },`;
+      }
+      el.style.boxShadow = shadow.slice(0, -1);
+    } else {
+      el.style.boxShadow = '';
+    }
+    return el;
+  }
+  isDead() {
+    if (document.getElementById('persistent').checked) return false;
+    return this.age >= this.maxAge;
+  }
+}
+
+// Button/experiment binding
+window.runExperiment = (type) => lab.runExperiment(type);
+// Start up
+const lab = new UCBFLaboratory();
+setTimeout(() => lab.updatePhysics(), 500);
+</script>
+</body>
+</html>
