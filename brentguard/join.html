@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Join a BrentGuard circle</title>
+<style>
+body{font-family:system-ui,sans-serif;background:#fdf8ec;color:#1e293b;max-width:640px;margin:0 auto;padding:24px;line-height:1.5}
+h1{color:#174e3b}
+a.btn{display:inline-block;background:#ea580c;color:#fff;padding:14px 26px;border-radius:12px;text-decoration:none;font-weight:700;font-size:18px;margin:12px 0}
+a.plain{color:#174e3b}
+.note{background:#fff;border:1px solid #e2dccb;border-radius:12px;padding:14px}
+code{word-break:break-all}
+</style>
+</head>
+<body>
+<h1>Join a BrentGuard circle</h1>
+<p id="msg">Tap the button below and BrentGuard will add you to this circle automatically — no code to type, no key to paste.</p>
+<p><a class="btn" id="openBtn" href="./">Open BrentGuard</a></p>
+<div class="note">
+<p><strong>Don't have BrentGuard yet?</strong><br>
+<a class="plain" href="./">Get BrentGuard first</a>, then come back and tap the invite link again. The invite cannot join automatically on the very first install — after installing, tapping the link again is the step that adds you.</p>
+<p><strong>If nothing happens</strong> when you tap Open BrentGuard, open BrentGuard yourself, tap Details, then Join circle, and paste the invite text below.</p>
+<p>Invite: <code id="invite">(none in this link)</code></p>
+</div>
+<script>
+(function(){
+  var q = new URLSearchParams(location.search);
+  var invite = q.get("invite") || "";
+  if (invite) {
+    document.getElementById("invite").textContent = invite;
+    var app = "brentguard://join?invite=" + encodeURIComponent(invite);
+    var btn = document.getElementById("openBtn");
+    btn.href = app;
+    // Try to open the app automatically once, after a short pause.
+    // If the app is not installed, the browser just stays here, and
+    // the Get BrentGuard link above is the way in.
+    setTimeout(function(){ window.location = app; }, 600);
+  } else {
+    document.getElementById("msg").textContent = "This link has no invite in it. Ask the person who sent it to share the invite link again from BrentGuard (Share, not the old code).";
+  }
+})();
+</script>
+</body>
+</html>
