@@ -10,8 +10,6 @@ h1{color:#174e3b}
 a.btn{display:inline-block;background:#ea580c;color:#fff;padding:14px 26px;border-radius:12px;text-decoration:none;font-weight:700;font-size:18px;margin:12px 0}
 a.plain{color:#174e3b}
 .note{background:#fff;border:1px solid #e2dccb;border-radius:12px;padding:14px}
-details{margin-top:12px}
-code{word-break:break-all}
 </style>
 </head>
 <body>
@@ -22,16 +20,34 @@ code{word-break:break-all}
 <div class="note">
 <p><strong>Don't have BrentGuard yet?</strong><br>
 <a class="plain" href="./">Get BrentGuard first</a>, then come back and tap the invite link again. The invite cannot join automatically on the very first install — after installing, tapping the link again is the step that adds you.</p>
-<details><summary>Having trouble? Show the invite text</summary>
-<p>Invite: <code id="invite">(none in this link)</code></p>
-</details>
 </div>
 <script>
 (function(){
   var q = new URLSearchParams(location.search);
   var invite = q.get("invite") || "";
+  var a = q.get("a") || "";
+  var o = q.get("o") || "";
+  var code = q.get("code") || "";
+  var key = q.get("key") || "";
+  // 1.8.35 HTTPS ANSWER/OFFER: an https answer/offer link lands
+  // here, tappable in SMS, then forwards straight to the app.
+  // No code shown, no paste, just tap Open BrentGuard (or the
+  // auto-redirect below) and the app finishes connecting.
+  if (a) {
+    document.getElementById("msg").textContent = "Tap the button below and BrentGuard will finish connecting automatically — no code to copy.";
+    var app = "brentguard://answer?code=" + encodeURIComponent(code) + "&key=" + encodeURIComponent(key) + "&a=" + encodeURIComponent(a);
+    document.getElementById("openBtn").href = app;
+    setTimeout(function(){ window.location = app; }, 600);
+    return;
+  }
+  if (o) {
+    document.getElementById("msg").textContent = "Tap the button below and BrentGuard will connect to them automatically — no code to copy.";
+    var app2 = "brentguard://offer?code=" + encodeURIComponent(code) + "&key=" + encodeURIComponent(key) + "&o=" + encodeURIComponent(o);
+    document.getElementById("openBtn").href = app2;
+    setTimeout(function(){ window.location = app2; }, 600);
+    return;
+  }
   if (invite) {
-    document.getElementById("invite").textContent = invite;
     var app = "brentguard://join?invite=" + encodeURIComponent(invite);
     var btn = document.getElementById("openBtn");
     btn.href = app;
